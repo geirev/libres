@@ -49,7 +49,7 @@ class AnalysisModule(BaseCClass):
         "IES_INVERSION": {"type": int, "description": "Inversion algorithm"},
         "IES_DEBUG": {"type": bool, "description": "Print extensive log for IES analysis steps"},
         "IES_LOGFILE": {"type": str, "description": "IES Log File"},
-        "GAUSS_NEWTON_CONV": {"type": float, "description": "Convergence Criteria for Gauss Newton Iteration"},
+        "IES_AAPROJECTION": {"type": str, "description": "Include projection Y (A^+A) for n<N-1"},
         "LAMBDA0": {"type": float, "description": "Initial Lambda"},
         "USE_PRIOR": {"type": bool, "description": "Use both Prior and Observation Variability"},
         "LAMBDA_REDUCE": {"type": float, "description": "Lambda Reduction Factor"},

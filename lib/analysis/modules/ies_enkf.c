@@ -50,6 +50,7 @@
 #define IES_INVERSION_KEY                "IES_INVERSION"
 #define IES_LOGFILE_KEY                  "IES_LOGFILE"
 #define IES_DEBUG_KEY                    "IES_DEBUG"
+#define IES_AAPROJECTION_KEY             "IES_AAPROJECTION"
 
 
 #include "tecplot.c"
@@ -292,21 +293,21 @@ void ies_enkf_updateA( void * module_data,
 
 /***************************************************************************************************************
 *  COMPUTING THE PROJECTION Y= Y * (Ai^+ * Ai) (only used when state_size < ens_size-1)    */
-   if (ies_enkf_data_get_AAprojection(data) && (state_size <= (ens_size - 1))) {
+   if (ies_enkf_config_get_ies_aaprojection(ies_config) && (state_size <= (ens_size - 1))) {
       fprintf(log_fp,"Activating AAi projection for Y\n");
       matrix_type * Ai    = matrix_alloc_copy( A );
       matrix_type * AAi   = matrix_alloc( ens_size, ens_size  );
       matrix_subtract_row_mean(Ai);
       matrix_type * VT    = matrix_alloc( state_size, ens_size  );
       matrix_dgesvd(DGESVD_NONE , DGESVD_MIN_RETURN , Ai , eig , NULL , VT);
-      if (dbg) matrix_pretty_fprint_submat(VT,"VT","%11.5f",log_fp,0,state_size-1,0,m_ens_size) ;
+      if (dbg) matrix_pretty_fprint_submat(VT,"VT","%11.5f",log_fp,0,m_state_size-1,0,m_ens_size) ;
       matrix_dgemm(AAi,VT,VT,true,false,1.0,0.0);
-      if (dbg) matrix_pretty_fprint(AAi,"AAi","%11.5f",log_fp);
+      if (dbg) matrix_pretty_fprint_submat(AAi,"AAi","%11.5f",log_fp,0,m_ens_size-1,0,m_ens_size);
       matrix_inplace_matmul(Y,AAi);
       matrix_free(Ai);
       matrix_free(AAi);
       matrix_free(VT);
-      if (dbg) matrix_pretty_fprint(Y,"Yprojected","%11.5f",log_fp);
+      if (dbg) matrix_pretty_fprint_submat(Y,"Yprojected","%11.5f",log_fp,0,m_nrobs,0,m_ens_size) ;
    }
 
 /***************************************************************************************************************
@@ -333,8 +334,8 @@ void ies_enkf_updateA( void * module_data,
         fprintf(log_fp,"data->W copied exactly to W0: %d\n",matrix_equal(dataW,W0)) ;
       }
 
-      if (dbg) matrix_pretty_fprint(dataW,"data->W","%11.5f",log_fp);
-      if (dbg) matrix_pretty_fprint(W0,"W0","%11.5f",log_fp);
+      if (dbg) matrix_pretty_fprint_submat(dataW,"data->W","%11.5f",log_fp,0,m_ens_size-1,0,m_ens_size);
+      if (dbg) matrix_pretty_fprint_submat(W0,"W0","%11.5f",log_fp,0,m_ens_size-1,0,m_ens_size);
    }
 
 /***************************************************************************************************************
@@ -533,7 +534,7 @@ void ies_enkf_updateA( void * module_data,
    for (int i = 0; i < ens_size; i++){
       matrix_iadd(X,i,i,1.0);
    }
-   if (dbg) matrix_pretty_fprint(X,"X","%11.5f",log_fp);
+   if (dbg) matrix_pretty_fprint_submat(X,"X","%11.5f",log_fp,0,m_ens_size-1,0,m_ens_size);
 
 /***************************************************************************************************************
 *  COMPUTE NEW ENSEMBLE SOLUTION FOR CURRENT ITERATION  Ei=A0*X                              (Line 11)   */
@@ -542,8 +543,8 @@ void ies_enkf_updateA( void * module_data,
       int i=-1;
       const bool_vector_type * ens_mask = ies_enkf_data_get_ens_mask(data);
       const matrix_type * dataA0 = ies_enkf_data_getA0(data);
-      matrix_pretty_fprint(A0,"data->A0","%11.5f",log_fp);
-      matrix_pretty_fprint(A,"A^f","%11.5f",log_fp);
+      matrix_pretty_fprint_submat(A0,"data->A0","%11.5f",log_fp,0,m_state_size,0,m_ens_size);
+      matrix_pretty_fprint_submat(A,"A^f","%11.5f",log_fp,0,m_state_size,0,m_ens_size);
       for (int iens=0; iens < ens_size_msk; iens++){
          if ( bool_vector_iget(ens_mask,iens) ){
             i=i+1;
@@ -557,7 +558,7 @@ void ies_enkf_updateA( void * module_data,
    }
    if (dbg) tecfld( X, "tecX.dat" , "X", ens_size, ens_size , iteration_nr);
    matrix_matmul(A,A0,X);
-   matrix_pretty_fprint(A,"A^a","%11.5f",log_fp);
+   matrix_pretty_fprint_submat(A,"A^a","%11.5f",log_fp,0,m_state_size,0,m_ens_size);
 
 
 /***************************************************************************************************************
@@ -666,6 +667,8 @@ bool ies_enkf_set_bool( void * arg , const char * var_name , bool value) {
       ies_enkf_config_set_ies_subspace( ies_config , value);
     else if (strcmp( var_name , IES_DEBUG_KEY) == 0)
       ies_enkf_config_set_ies_debug( ies_config , value );
+    else if (strcmp( var_name , IES_AAPROJECTION_KEY) == 0)
+      ies_enkf_config_set_ies_aaprojection( ies_config , value );
     else
       name_recognized = false;
 
@@ -681,6 +684,8 @@ bool ies_enkf_get_bool( const void * arg, const char * var_name) {
       return ies_enkf_config_get_ies_subspace( ies_config );
     else if (strcmp(var_name , IES_DEBUG_KEY) == 0)
       return ies_enkf_config_get_ies_debug( ies_config );
+    else if (strcmp(var_name , IES_AAPROJECTION_KEY) == 0)
+      return ies_enkf_config_get_ies_aaprojection( ies_config );
     else
        return false;
   }
@@ -742,6 +747,8 @@ bool ies_enkf_has_var( const void * arg, const char * var_name) {
     else if (strcmp(var_name , IES_LOGFILE_KEY) == 0)
       return true;
     else if (strcmp(var_name , IES_DEBUG_KEY) == 0)
+      return true;
+    else if (strcmp(var_name , IES_AAPROJECTION_KEY) == 0)
       return true;
     else if (strcmp(var_name , ENKF_TRUNCATION_KEY) == 0)
       return true;
