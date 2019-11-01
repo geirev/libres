@@ -106,8 +106,11 @@ void ies_enkf_linalg_extract_active_A0(const ies_enkf_data_type * data,
                                        FILE * log_fp,
                                        bool dbg);
 
-void static ies_enkf_updateE(const matrix_type * W,
-                             const int iter);
+void ies_enkf_updateE(const matrix_type * W,
+                      const int iter);
+
+void ies_enkf_newE(matrix_type * E);
+
 /***************************************************************************************************************/
 
 #ifdef __cplusplus
@@ -248,6 +251,13 @@ void ies_enkf_updateA( void * module_data,
    int m_ens_size   = util_int_min(ens_size  -1,16);
    int m_state_size = util_int_min(state_size-1,3);
 
+/***************************************************************************************************************/
+/* Replace ERT E with the one from file EPERT_0 */
+      matrix_type * newE   = matrix_alloc( nrobs    , ens_size );
+      ies_enkf_newE(newE);
+      ies_enkf_data_store_initialE(data, newE);
+      exit(-1);
+//      ies_enkf_data_store_initialE(data, Ein);
 /***************************************************************************************************************/
    ies_enkf_data_allocateW(data, ens_size_msk);
    ies_enkf_data_store_initialA(data, A);
@@ -972,10 +982,11 @@ void * ies_enkf_get_ptr( const void * arg , const char * var_name ) {
 *           https://link.springer.com/article/10.1007%2Fs10596-019-9819-z
 *  and be updated in the conditioning process.
 *
-*  This routine reads the original measurement perturbations E0 from a file EPERT_0 and updates them according to E=E0*W
-*  and then stores the updated E back to file EPERT_i.  EPERT_i should then be used to perturb rates in the schedule file.
+*  This routine reads the original measurement perturbations E0 from a file EPERT_0 and updates them according to E=E0*X
+*  and then stores the updated E back to file EPERT_i.  EPERT_i should then be used to perturb rates in the schedule file 
+*  in IES iteration i.
 */
-void static ies_enkf_updateE(const matrix_type * X,
+void ies_enkf_updateE(const matrix_type * X,
                              const int iter)
 {
    char Efile[20];
@@ -984,10 +995,9 @@ void static ies_enkf_updateE(const matrix_type * X,
 
    strncpy(Efile, "EPERT_0", 7);
 
-   int icount;
+   int iobs;
    int nens = matrix_get_rows( X );
 
-/*********************************************************************************/
 /*********************************************************************************/
 // Open and read EPERT file
    int nrens,nrwells, nrdata, nx;
@@ -1002,15 +1012,18 @@ void static ies_enkf_updateE(const matrix_type * X,
    FILE* fpe = fopen(Efile, "r");
    if (fpe == NULL) { printf("fopen failed to open the file %s\n", Efile); exit(-1); }
 
-   fscanf(fpe,"%s %d %s %d %s %d %s %d ", cnrens, &nrens, cnrwells, &nrwells, cnrdata, &nrdata, cnx, &nx);
-   printf("%s %d, %s %d, %s %d, %s %d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
+   if (fscanf(fpe,"%s %d %s %d %s %d %s %d ", cnrens, &nrens, cnrwells, &nrwells, cnrdata, &nrdata, cnx, &nx) == 8){
+      printf("%s %d, %s %d, %s %d, %s %d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
+   } else{
+      printf("fscan error A reading %s\n", Efile);
+      exit(-1);
+   }
 
    if (nens != nrens) {printf("Dimension error nens= %d and nrens= %d\n",nens,nrens) ; exit(-1);} 
 
-   int ndim=nrwells*nrdata*nx;
-   matrix_type * Ein   = matrix_alloc( ndim, nrens);
-
-   matrix_type * Eout  = matrix_alloc( ndim, nrens);
+   int nrobs=nrwells*nrdata*nx;
+   matrix_type * Ein   = matrix_alloc( nrobs, nrens);
+   matrix_type * Eout  = matrix_alloc( nrobs, nrens);
 
    int dummyj;  // ensemble index
    int dummyi;  // well index
@@ -1018,19 +1031,26 @@ void static ies_enkf_updateE(const matrix_type * X,
    int dummyk;  // time index
    float value;
 
-   printf("Reading file");
-   icount=0;
-   for(int j = 0; j < nrens; j++){ // Ensemble number index
-      for(int i = 0; i < nrwells; i++){ // wellname index
-         for(int l = 0; l < nrdata; l++){  // ratetype index
-            for(int k = 0; k < nx; k++){  // time index
-               fscanf(fpe, "%d %d %d %d %f", &dummyk, &dummyl, &dummyi, &dummyj, &value);
-               if (k==dummyk-1  && l==dummyl-1 && i==dummyi-1 && j==dummyj-1){
-                  matrix_iset(Ein,icount,j,value) ;
-                  icount++;
-               } else {
-                  printf("Error reading %s: %d %d %d %d %d %d %d %d\n",Efile, j, dummyj-1, i, dummyi-1, l, dummyl-1, k, dummyk-1);
-                  exit (-1);
+   printf("Reading file\n");
+   int fstat=0;
+   for(int j = 0; j < nrens; j++){
+      iobs=0;
+      for(int i = 0; i < nrwells; i++){
+         for(int l = 0; l < nrdata; l++){
+            for(int k = 0; k < nx; k++){
+               
+               fstat=fscanf(fpe, "%d %d %d %d %f", &dummyk, &dummyl, &dummyi, &dummyj, &value);
+               if (fstat == 5){
+                  if (k==dummyk-1  && l==dummyl-1 && i==dummyi-1 && j==dummyj-1){
+                     matrix_iset_safe(Ein,iobs,j,value) ;
+                     iobs++;
+                  } else {
+                     printf("Error inputs from %s: %d %d %d %d %d %d %d %d\n",Efile, j, dummyj-1, i, dummyi-1, l, dummyl-1, k, dummyk-1);
+                     exit (-1);
+                  }
+               } else{
+                  printf("fscanf error fstat=%d reading: %s, (iobs=%d, j,i,l,k=%d %d %d %d)\n",fstat,Efile,iobs,j,i,l,k);
+                  exit(-1);
                }
             }
          }
@@ -1040,7 +1060,6 @@ void static ies_enkf_updateE(const matrix_type * X,
    printf("Done reading =%s \n", Efile);
 
    printf("Computing the update \n");
-   //  matrix_assign(Eout,Ein);
    matrix_matmul(Eout,Ein,X);
 
    sprintf(Efileout, "EPERT_%d",iter);
@@ -1049,13 +1068,13 @@ void static ies_enkf_updateE(const matrix_type * X,
    FILE* fpout = fopen(Efileout, "w");
    fprintf(fpout,"%s%6d %s%6d %s%6d %s%6d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
 
-   icount=0;
    for(int j = 0; j < nrens; j++){ 
+      iobs=0;
       for(int i = 0; i < nrwells; i++){
          for(int l = 0; l < nrdata; l++){
             for(int k = 0; k < nx; k++){
-               fprintf(fpout, "%4d%4d%4d%4d%15.6E\n", k+1, l+1, i+1, j+1, matrix_iget(Eout,icount,j));
-               icount++;
+               fprintf(fpout, "%4d%4d%4d%4d%15.6E\n", k+1, l+1, i+1, j+1, matrix_iget(Eout,iobs,j));
+               iobs++;
             }
          }
       }
@@ -1067,25 +1086,21 @@ void static ies_enkf_updateE(const matrix_type * X,
    sprintf(Efilestat, "Estat_%d.dat",iter);
    printf("Writing the output file=%s \n", Efilestat);
    FILE* fpstat = fopen(Efilestat, "w");
-   icount=0;
    float ave;
    float var;
-   for(int i = 0; i < nrwells; i++){
-      for(int l = 0; l < nrdata; l++){
-         for(int k = 0; k < nx; k++){
-            ave=0.0;
-            var=0.0;
-            for(int j = 0; j < nrens; j++){ 
-               value=matrix_iget(Eout,icount,j);
-               ave=ave+value;
-               var=var+value*value;
-            }
-            ave=ave/nrens;
-            var=var/nrens-ave*ave;
-            icount++;
-            fprintf(fpstat, "%4d %15.6e %15.6e\n", icount , ave, var);
-         }
+   float std;
+   for (int iobs = 0; iobs < nrobs; iobs++){
+      ave=0.0;
+      var=0.0;
+      for(int j = 0; j < nrens; j++){ 
+         value=matrix_iget(Eout,iobs,j);
+         ave=ave+value;
+         var=var+value*value;
       }
+      ave=ave/nrens;
+      var=var/nrens-ave*ave;
+      std=sqrt(var);
+      fprintf(fpstat, "%4d %15.6e %15.6e %15.6e \n", iobs , ave, std, var);
    }
    fclose(fpstat);
    printf("Done writing =%s \n", Efilestat);
@@ -1095,33 +1110,145 @@ void static ies_enkf_updateE(const matrix_type * X,
       sprintf(Efilestat, "Estat_0.dat");
       printf("Writing the output file=%s \n", Efilestat);
       FILE* fpstat = fopen(Efilestat, "w");
-      icount=0;
       float ave;
       float var;
-      for(int i = 0; i < nrwells; i++){
-         for(int l = 0; l < nrdata; l++){
-            for(int k = 0; k < nx; k++){
-               ave=0.0;
-               var=0.0;
-               for(int j = 0; j < nrens; j++){ 
-                  value=matrix_iget(Ein,icount,j);
-                  ave=ave+value;
-                  var=var+value*value;
-               }
-               ave=ave/nrens;
-               var=var/nrens-ave*ave;
-               icount++;
-               fprintf(fpstat, "%4d %15.6e %15.6e\n", icount , ave, var);
-            }
+      float std;
+      for (int iobs = 0; iobs < nrobs; iobs++){
+         ave=0.0;
+         var=0.0;
+         for(int j = 0; j < nrens; j++){ 
+            value=matrix_iget(Ein,iobs,j);
+            ave=ave+value;
+            var=var+value*value;
          }
+         ave=ave/nrens;
+         var=var/nrens-ave*ave;
+         std=sqrt(var);
+         fprintf(fpstat, "%4d %15.6e %15.6e %15.6e \n", iobs , ave, std, var);
       }
       fclose(fpstat);
       printf("Done writing =%s \n", Efilestat);
    }
+
+
    matrix_free(Ein);
    matrix_free(Eout);
 }
 
+/*
+*  This routine reads the original measurement perturbations E from a file EPERT_0 and replaces the ERT
+*  genereated Ein  matrix used to perturb measuerements in the IES update.  Since we can now read perturbations
+*  with correlated errors, we now compute the analysis with a nondiagonal R=EE' matrix for the options
+*     ies_inversion=IES_INVERSION_SUBSPACE_EE_R(2)    -> subspace inversion from with R=EE
+*     ies_inversion=IES_INVERSION_SUBSPACE_RE(3)      -> subspace inversion from with R represented by E
+*  Note that for the following inversion options a diagonal R=I is implicitly used, and only the 
+*  measurement perturbations are replaced with the ones from EPERT_0:
+*     ies_inversion=IES_INVERSION_EXACT(0)            -> exact inversion with implicitly assumed R=I
+*     ies_inversion=IES_INVERSION_SUBSPACE_EXACT_R(1) -> subspace inversion with spesified R=I
+*/
+void ies_enkf_newE(matrix_type * E){
+   char Efile[100];
+   strncpy(Efile, "EPERT_0", 7);
+
+   char updatelogfile[100];
+   strncpy(updatelogfile, "update_log/0000-0036\0",21);
+
+   int nens = matrix_get_columns( E );
+   int nobs = matrix_get_rows( E );
+
+   int iobs,nrens,nrwells, nrdata, nx;
+   char *cnrens = malloc(10 * sizeof(char));
+   char *cnrwells = malloc(10 * sizeof(char));
+   char *cnrdata = malloc(10 * sizeof(char));
+   char *cnx = malloc(10 * sizeof(char));
+
+   printf("Reading =%s version A\n", Efile);
+   FILE* fpe = fopen(Efile, "r");
+   if (fpe == NULL) { printf("fopen failed to open the file %s\n", Efile); exit(-1); }
+
+   if (fscanf(fpe,"%s %d %s %d %s %d %s %d ", cnrens, &nrens, cnrwells, &nrwells, cnrdata, &nrdata, cnx, &nx) == 8){
+      printf("%s %d, %s %d, %s %d, %s %d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
+   } else{
+      printf("fscan error A reading %s\n", Efile);
+      exit(-1);
+   }
+   int nrobs=nrwells*nrdata*nx;
+
+   if (nens != nrens) {printf("Dimension error nens= %d and nrens= %d\n",nens,nrens) ; exit(-1);} 
+   if (nobs != nrobs) {printf("Dimension error nobs= %d and nrobs= %d\n",nobs,nrobs) ;} 
+   matrix_type * Ein   = matrix_alloc(nrobs, nrens);
+
+   int dummyj;  // ensemble index
+   int dummyi;  // well index
+   int dummyl;  // ratetype index
+   int dummyk;  // time index
+   float value;
+
+   int fstat=0;
+   for(int j = 0; j < nrens; j++){
+      iobs=0;
+      for(int i = 0; i < nrwells; i++){
+         for(int l = 0; l < nrdata; l++){
+            for(int k = 0; k < nx; k++){
+               
+               fstat=fscanf(fpe, "%d %d %d %d %f", &dummyk, &dummyl, &dummyi, &dummyj, &value);
+               if (fstat == 5){
+                  if (k==dummyk-1  && l==dummyl-1 && i==dummyi-1 && j==dummyj-1){
+                     matrix_iset_safe(Ein,iobs,j,value) ;
+                     iobs++;
+                  } else {
+                     printf("Error inputs from %s: %d %d %d %d %d %d %d %d\n",Efile, j, dummyj-1, i, dummyi-1, l, dummyl-1, k, dummyk-1);
+                     exit (-1);
+                  }
+               } else{
+                  printf("fscanf error fstat=%d reading: %s, (iobs=%d, j,i,l,k=%d %d %d %d)\n",fstat,Efile,iobs,j,i,l,k);
+                  exit(-1);
+               }
+            }
+         }
+      }
+   }
+   fclose(fpe);
+   printf("Done reading =%s \n", Efile);
+
+
+/********************************************************************************************************/   
+   printf("Reading =%s\n", updatelogfile);
+   FILE* fpu = fopen(updatelogfile, "r");
+   if (fpu == NULL) { printf("fopen failed to open the file %s\n", updatelogfile); exit(-1); }
+
+   int linenr=0;
+   char line[256];
+   char dummyA[1];
+   char dummyB[20];
+   char rate[20];
+   char well[20];
+   while (fgets(line, sizeof line, fpu) != NULL){
+      linenr++;
+//      printf("%5d: %s\n",linenr,line);
+      if (linenr > 6){
+         sscanf(line, "%d %s %s", &iobs, dummyA, dummyB);
+              int i=0;
+              do {
+                 i++;
+                 printf("%s",dummyB[i]);
+                 if (dummyB[i] == ':'){
+                   printf("i=%d",i);
+                   strncpy(rate, dummyB, i) ;
+                   strncpy(well, dummyB+i,10) ;
+                   break;
+                  }
+              } while (dummyB[i++]);
+
+         printf("cobs=%5d-%s-%s-%s\n", iobs,  dummyB, rate, well);
+      }
+   }
+   fclose(fpu);
+   printf("Done reading =%s \n", updatelogfile);
+
+/********************************************************************************************************/   
+
+}
 
 
 //**********************************************
