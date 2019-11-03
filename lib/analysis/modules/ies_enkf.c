@@ -109,7 +109,7 @@ void ies_enkf_linalg_extract_active_A0(const ies_enkf_data_type * data,
 void ies_enkf_updateE(const matrix_type * W,
                       const int iter);
 
-void ies_enkf_newE(matrix_type * E);
+void ies_enkf_newE(matrix_type * newE);
 
 /***************************************************************************************************************/
 
@@ -253,11 +253,15 @@ void ies_enkf_updateA( void * module_data,
 
 /***************************************************************************************************************/
 /* Replace ERT E with the one from file EPERT_0 */
+   int lepert=1;
+   if (lepert == 1){
       matrix_type * newE   = matrix_alloc( nrobs    , ens_size );
       ies_enkf_newE(newE);
       ies_enkf_data_store_initialE(data, newE);
-      exit(-1);
-//      ies_enkf_data_store_initialE(data, Ein);
+   } else {
+      ies_enkf_data_store_initialE(data, Ein);
+   }
+   exit(-1);
 /***************************************************************************************************************/
    ies_enkf_data_allocateW(data, ens_size_msk);
    ies_enkf_data_store_initialA(data, A);
@@ -1147,11 +1151,6 @@ void ies_enkf_updateE(const matrix_type * X,
 *     ies_inversion=IES_INVERSION_SUBSPACE_EXACT_R(1) -> subspace inversion with spesified R=I
 */
 void ies_enkf_newE(matrix_type * E){
-   char Efile[100];
-   strncpy(Efile, "EPERT_0", 7);
-
-   char updatelogfile[100];
-   strncpy(updatelogfile, "update_log/0000-0036\0",21);
 
    int nens = matrix_get_columns( E );
    int nobs = matrix_get_rows( E );
@@ -1162,7 +1161,8 @@ void ies_enkf_newE(matrix_type * E){
    char *cnrdata = malloc(10 * sizeof(char));
    char *cnx = malloc(10 * sizeof(char));
 
-   printf("Reading =%s version A\n", Efile);
+   char* Efile="EPERT_0";
+   printf("Reading =%s\n", Efile);
    FILE* fpe = fopen(Efile, "r");
    if (fpe == NULL) { printf("fopen failed to open the file %s\n", Efile); exit(-1); }
 
@@ -1178,6 +1178,7 @@ void ies_enkf_newE(matrix_type * E){
    if (nobs != nrobs) {printf("Dimension error nobs= %d and nrobs= %d\n",nobs,nrobs) ;} 
    matrix_type * Ein   = matrix_alloc(nrobs, nrens);
 
+   int index;
    int dummyj;  // ensemble index
    int dummyi;  // well index
    int dummyl;  // ratetype index
@@ -1194,6 +1195,9 @@ void ies_enkf_newE(matrix_type * E){
                fstat=fscanf(fpe, "%d %d %d %d %f", &dummyk, &dummyl, &dummyi, &dummyj, &value);
                if (fstat == 5){
                   if (k==dummyk-1  && l==dummyl-1 && i==dummyi-1 && j==dummyj-1){
+                     
+                     index=k +   l*nx + i* nx * nrdata;
+//                     printf("k=%d, l=%d, i=%d, iobs=%d, index=%d\n",k,l,i,iobs,index);
                      matrix_iset_safe(Ein,iobs,j,value) ;
                      iobs++;
                   } else {
@@ -1213,41 +1217,60 @@ void ies_enkf_newE(matrix_type * E){
 
 
 /********************************************************************************************************/   
+   char* updatelogfile="update_log/0000-0036";
    printf("Reading =%s\n", updatelogfile);
    FILE* fpu = fopen(updatelogfile, "r");
    if (fpu == NULL) { printf("fopen failed to open the file %s\n", updatelogfile); exit(-1); }
 
+   char colon[1];
+   char variable[20], last[20];
+   char * wellp;
+   char * ratep;
+   char * string;
+   int i=0;
+   int iwell=0;
+   int irate=0;
    int linenr=0;
-   char line[256];
-   char dummyA[1];
-   char dummyB[20];
-   char rate[20];
-   char well[20];
+   char line[250];
    while (fgets(line, sizeof line, fpu) != NULL){
       linenr++;
-//      printf("%5d: %s\n",linenr,line);
+//      printf("line: %s",line);
       if (linenr > 6){
-         sscanf(line, "%d %s %s", &iobs, dummyA, dummyB);
-              int i=0;
-              do {
-                 i++;
-                 printf("%s",dummyB[i]);
-                 if (dummyB[i] == ':'){
-                   printf("i=%d",i);
-                   strncpy(rate, dummyB, i) ;
-                   strncpy(well, dummyB+i,10) ;
-                   break;
-                  }
-              } while (dummyB[i++]);
+         if (line[0]  == '=') break;
+         fstat=sscanf(line,"%d %s %s", &iobs,colon,variable);
+//         printf("scan: %d %s %s \n", iobs,colon,variable);
+         if (strcmp(variable,"...")){
+            strcpy(last,variable);
+            i=1;
+         } else {
+            i++;
+            strcpy(variable,last);
+         }
+         string = strdup(variable);
+         ratep = strsep(&string, ":");
+         wellp = strsep(&string, ":");
+         if (strcmp(wellp,"OP_1") == 0) iwell=1;
+         else if (strcmp(wellp,"OP_2") == 0) iwell=2; 
+         else if (strcmp(wellp,"OP_3") == 0) iwell=3;
+         else if (strcmp(wellp,"OP_4") == 0) iwell=4;
+         else if (strcmp(wellp,"OP_5") == 0) iwell=5;
+         else {printf("well not found %s\n",wellp); exit(-1); }
 
-         printf("cobs=%5d-%s-%s-%s\n", iobs,  dummyB, rate, well);
+         if (strcmp(ratep,"WOPR") == 0) irate=1;
+         else if (strcmp(ratep,"WWPR") == 0) irate=2;
+         else if (strcmp(ratep,"WGPR") == 0) irate=3;
+         else {printf("rate not found %s\n",ratep); exit(-1); }
+
+         index=i +   irate*nx + iwell* nx * nrdata;
+         printf("linenr=%d, iobs=%5d, index=%5d, i=%d, iwell=%d, irate=%d, well=%s, rate=%s\n",linenr,iobs,index,i,iwell,irate,wellp,ratep);
+//         E(iobs,j) = Ein(index ,j);
+ 
       }
    }
    fclose(fpu);
-   printf("Done reading =%s \n", updatelogfile);
+   printf("Done reading =%s %d \n", updatelogfile, linenr);
 
 /********************************************************************************************************/   
-
 }
 
 
