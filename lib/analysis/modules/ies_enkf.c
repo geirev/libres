@@ -107,9 +107,13 @@ void ies_enkf_linalg_extract_active_A0(const ies_enkf_data_type * data,
                                        bool dbg);
 
 void ies_enkf_updateE(const matrix_type * X,
-                      const int iter);
+                      const int iter,
+                      FILE * log_fp,
+                      bool dbg);
 
-void ies_enkf_newE(matrix_type * newE);
+void ies_enkf_newE(matrix_type * newE,
+                   FILE * log_fp,
+                   bool dbg);
 
 /***************************************************************************************************************/
 
@@ -253,14 +257,14 @@ void ies_enkf_updateA( void * module_data,
 
 /***************************************************************************************************************/
 /* Replace ERT E with the one from file EPERT_0 */
-   int lepert=1;
+   int lepert=0;
    if (lepert == 1){
       fprintf(log_fp,"----ies_epert       = %d\n", lepert);
       matrix_type * newE   = matrix_alloc( nrobs    , ens_size );
-      ies_enkf_newE(newE);
+      ies_enkf_newE(newE, log_fp, dbg);
       ies_enkf_data_store_initialE(data, newE);
       for (int i=0; i< nrobs ; i++){
-         printf("E check: %d %e\n",i,matrix_iget(newE,i,1));
+         fprintf(log_fp,"E check: %d %e\n",i,matrix_iget(newE,i,1));
       }
    } else {
      fprintf(log_fp,"----ies_E from ERT  = %d\n", lepert);
@@ -419,9 +423,11 @@ void ies_enkf_updateA( void * module_data,
 
 /***************************************************************************************************************
 *  UPDATE ENSEMBLE SOLUTION RATE ERRORS IN CURRENT ITERATION  EI=E0*X                              (Line 11)   */
-   ies_enkf_updateE(X,iteration_nr);
-   printf("update E completed\n");
-
+   int lupdate_rates=1;
+   if (lupdate_rates == 1){
+      ies_enkf_updateE(X,iteration_nr,log_fp, dbg);
+      fprintf(log_fp,"updateE completed\n");
+   }
 /***************************************************************************************************************
 *  COMPUTE ||W0 - W|| AND EVALUATE COST FUNCTION FOR PREVIOUS ITERATE                        (Line 12)   */
    matrix_type * DW  = matrix_alloc( ens_size , ens_size  ); 
@@ -997,8 +1003,10 @@ void * ies_enkf_get_ptr( const void * arg , const char * var_name ) {
 */
 
 void ies_enkf_updateE(const matrix_type * X,
-                      const int iter)
-{
+                      const int iter,
+                      FILE * log_fp,
+                      bool dbg){
+
    char* Efile="EPERT_0";
    char Efileout[20];
    char Efilestat[20];
@@ -1016,18 +1024,18 @@ void ies_enkf_updateE(const matrix_type * X,
 
 // matrix_pretty_fprint_submat(X,"X","%11.5f",stdout,0,7,0,7);
 // Alternative one
-   printf("Reading =%s version A\n", Efile);
+   if (dbg) fprintf(log_fp,"Reading =%s version A\n", Efile);
    FILE* fpe = fopen(Efile, "r");
    if (fpe == NULL) { printf("fopen failed to open the file %s\n", Efile); exit(-1); }
 
    if (fscanf(fpe,"%s %d %s %d %s %d %s %d ", cnrens, &nrens, cnrwells, &nrwells, cnrdata, &nrdata, cnx, &nx) == 8){
-      printf("%s %d, %s %d, %s %d, %s %d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
+      if (dbg) fprintf(log_fp,"%s %d, %s %d, %s %d, %s %d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
    } else{
-      printf("fscan error A reading %s\n", Efile);
+      fprintf(log_fp,"fscan error A reading %s\n", Efile);
       exit(-1);
    }
 
-   if (nens != nrens) {printf("Dimension error nens= %d and nrens= %d\n",nens,nrens) ; exit(-1);} 
+   if (nens != nrens) {fprintf(log_fp,"Dimension error nens= %d and nrens= %d\n",nens,nrens) ; exit(-1);} 
 
    int nrobs=nrwells*nrdata*nx;
    matrix_type * Ein   = matrix_alloc( nrobs, nrens);
@@ -1039,7 +1047,7 @@ void ies_enkf_updateE(const matrix_type * X,
    int dummyk;  // time index
    float value;
 
-   printf("Reading file\n");
+   if (dbg) fprintf(log_fp,"Reading file\n");
    int fstat=0;
    for(int j = 0; j < nrens; j++){
       iobs=0;
@@ -1052,11 +1060,11 @@ void ies_enkf_updateE(const matrix_type * X,
                      matrix_iset_safe(Ein,iobs,j,value) ;
                      iobs++;
                   } else {
-                     printf("Error inputs from %s: %d %d %d %d %d %d %d %d\n",Efile, j, dummyj-1, i, dummyi-1, l, dummyl-1, k, dummyk-1);
+                     fprintf(log_fp,"Error inputs from %s: %d %d %d %d %d %d %d %d\n",Efile, j, dummyj-1, i, dummyi-1, l, dummyl-1, k, dummyk-1);
                      exit (-1);
                   }
                } else{
-                  printf("fscanf error fstat=%d reading: %s, (iobs=%d, j,i,l,k=%d %d %d %d)\n",fstat,Efile,iobs,j,i,l,k);
+                  fprintf(log_fp,"fscanf error fstat=%d reading: %s, (iobs=%d, j,i,l,k=%d %d %d %d)\n",fstat,Efile,iobs,j,i,l,k);
                   exit(-1);
                }
             }
@@ -1064,7 +1072,7 @@ void ies_enkf_updateE(const matrix_type * X,
       }
    }
    fclose(fpe);
-   printf("Done reading =%s \n", Efile);
+   if(dbg) fprintf(log_fp,"Done reading =%s \n", Efile);
 
 
 
@@ -1076,7 +1084,7 @@ void ies_enkf_updateE(const matrix_type * X,
 
 
    sprintf(Efileout, "EPERT_%d",iter);
-   printf("Writing the output file=%s \n", Efileout);
+   if (dbg) fprintf(log_fp,"Writing the output file=%s \n", Efileout);
 
    FILE* fpout = fopen(Efileout, "w");
    fprintf(fpout,"%s%6d %s%6d %s%6d %s%6d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
@@ -1093,11 +1101,11 @@ void ies_enkf_updateE(const matrix_type * X,
       }
    }
    fclose(fpout);
-   printf("Done writing =%s \n", Efileout);
+   if (dbg) fprintf(log_fp,"Done writing =%s \n", Efileout);
 
    // statistics
    sprintf(Efilestat, "Estat_%d.dat",iter);
-   printf("Writing the output file=%s \n", Efilestat);
+   if (dbg) fprintf(log_fp,"Writing the output file=%s \n", Efilestat);
    FILE* fpstat = fopen(Efilestat, "w");
    float ave;
    float var;
@@ -1116,12 +1124,12 @@ void ies_enkf_updateE(const matrix_type * X,
       fprintf(fpstat, "%4d %15.6e %15.6e %15.6e \n", iobs , ave, std, var);
    }
    fclose(fpstat);
-   printf("Done writing =%s \n", Efilestat);
+   if (dbg) fprintf(log_fp,"Done writing =%s \n", Efilestat);
 
    // statistics
    if (iter == 1){
       sprintf(Efilestat, "Estat_0.dat");
-      printf("Writing the output file=%s \n", Efilestat);
+      if (dbg) fprintf(log_fp,"Writing the output file=%s \n", Efilestat);
       FILE* fpstat = fopen(Efilestat, "w");
       float ave;
       float var;
@@ -1140,7 +1148,7 @@ void ies_enkf_updateE(const matrix_type * X,
          fprintf(fpstat, "%4d %15.6e %15.6e %15.6e \n", iobs , ave, std, var);
       }
       fclose(fpstat);
-      printf("Done writing =%s \n", Efilestat);
+      if (dbg) fprintf(log_fp,"Done writing =%s \n", Efilestat);
    }
 
 
@@ -1159,8 +1167,9 @@ void ies_enkf_updateE(const matrix_type * X,
 *     ies_inversion=IES_INVERSION_EXACT(0)            -> exact inversion with implicitly assumed R=I
 *     ies_inversion=IES_INVERSION_SUBSPACE_EXACT_R(1) -> subspace inversion with spesified R=I
 */
-void ies_enkf_newE(matrix_type * newE){
-
+void ies_enkf_newE(matrix_type * newE,
+                      FILE * log_fp,
+                      bool dbg){
    int nens = matrix_get_columns( newE );
    int nobs = matrix_get_rows( newE );
 
@@ -1171,20 +1180,20 @@ void ies_enkf_newE(matrix_type * newE){
    char *cnx = malloc(10 * sizeof(char));
 
    char* Efile="EPERT_0";
-   printf("Reading =%s\n", Efile);
+   if (dbg) fprintf(log_fp,"Reading =%s\n", Efile);
    FILE* fpe = fopen(Efile, "r");
-   if (fpe == NULL) { printf("fopen failed to open the file %s\n", Efile); exit(-1); }
+   if (fpe == NULL) { fprintf(log_fp,"fopen failed to open the file %s\n", Efile); exit(-1); }
 
    if (fscanf(fpe,"%s %d %s %d %s %d %s %d ", cnrens, &nrens, cnrwells, &nrwells, cnrdata, &nrdata, cnx, &nx) == 8){
-      printf("%s %d, %s %d, %s %d, %s %d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
+      if (dbg) fprintf(log_fp,"%s %d, %s %d, %s %d, %s %d\n", cnrens, nrens, cnrwells, nrwells, cnrdata, nrdata, cnx, nx );
    } else{
-      printf("fscan error A reading %s\n", Efile);
+      fprintf(log_fp,"fscan error A reading %s\n", Efile);
       exit(-1);
    }
    int nrobs=nrwells*nrdata*nx;
 
-   if (nens != nrens) {printf("Dimension error nens= %d and nrens= %d\n",nens,nrens) ; exit(-1);} 
-   if (nobs != nrobs) {printf("Dimension error nobs= %d and nrobs= %d\n",nobs,nrobs) ;} 
+   if (nens != nrens) {fprintf(log_fp,"Dimension error nens= %d and nrens= %d\n",nens,nrens) ; exit(-1);} 
+   if (nobs != nrobs) {if (dbg) fprintf(log_fp,"Dimensions nobs= %d and nrobs= %d\n",nobs,nrobs) ;} 
    matrix_type * Epert   = matrix_alloc(nrobs, nrens);
 
    int index;
@@ -1205,15 +1214,15 @@ void ies_enkf_newE(matrix_type * newE){
                if (fstat == 5){
                   if (k==dummyk-1  && lrate==dummyl-1 && iwell==dummyi-1 && j==dummyj-1){
 
-//                   printf("k=%d, l=%d, i=%d, iobs=%d, index=%d\n",k,lrate,iwell,iobs,index);
+//                   fprintf(log_fp,"k=%d, l=%d, i=%d, iobs=%d, index=%d\n",k,lrate,iwell,iobs,index);
                      matrix_iset_safe(Epert,iobs,j,value) ;
                      iobs++;
                   } else {
-                     printf("Error inputs from %s: %d %d %d %d %d %d %d %d\n",Efile, j, dummyj-1, iwell, dummyi-1, lrate, dummyl-1, k, dummyk-1);
+                     fprintf(log_fp,"Error inputs from %s: %d %d %d %d %d %d %d %d\n",Efile, j, dummyj-1, iwell, dummyi-1, lrate, dummyl-1, k, dummyk-1);
                      exit (-1);
                   }
                } else{
-                  printf("fscanf error fstat=%d reading: %s, (iobs=%d, j,i,l,k=%d %d %d %d)\n",fstat,Efile,iobs,j,iwell,lrate,k);
+                  fprintf(log_fp,"fscanf error fstat=%d reading: %s, (iobs=%d, j,i,l,k=%d %d %d %d)\n",fstat,Efile,iobs,j,iwell,lrate,k);
                   exit(-1);
                }
             }
@@ -1221,7 +1230,7 @@ void ies_enkf_newE(matrix_type * newE){
       }
    }
    fclose(fpe);
-   printf("Done reading =%s \n", Efile);
+   if (dbg) fprintf(log_fp,"Done reading =%s \n", Efile);
 
 
 // Just to check that all elements of newE will be updated
@@ -1233,9 +1242,9 @@ void ies_enkf_newE(matrix_type * newE){
 
 /********************************************************************************************************/   
    char* updatelogfile="update_log/0000-0036";
-   printf("Reading =%s\n", updatelogfile);
+   if (dbg) fprintf(log_fp,"Reading =%s\n", updatelogfile);
    FILE* fpu = fopen(updatelogfile, "r");
-   if (fpu == NULL) { printf("fopen failed to open the file %s\n", updatelogfile); exit(-1); }
+   if (fpu == NULL) { fprintf(log_fp,"fopen failed to open the file %s\n", updatelogfile); exit(-1); }
 
    char colon[1];
    char variable[20], last[20];
@@ -1255,18 +1264,18 @@ void ies_enkf_newE(matrix_type * newE){
    iobs=-1;
    while (fgets(line, sizeof line, fpu) != NULL){
       linenr++;
-//      printf("\n");
-//      printf("line: %s",line);
+//      fprintf(log_fp,"\n");
+//      fprintf(log_fp,"line: %s",line);
       if (linenr > 6){
          if (line[0]  == '=') break;
          fstat=sscanf(line,"%d %s %s", &obsnr,colon,variable);
-//         printf("scan: %d %s %s %c %d\n", obsnr,colon,variable,line[79],strcmp(variable,"..."));
+//         fprintf(log_fp,"scan: %d %s %s %c %d\n", obsnr,colon,variable,line[79],strcmp(variable,"..."));
 
          if (strcmp(variable,"...") == 0){
-//            printf("strcpy:  %s  -> %s\n",last,variable);
+//            fprintf(log_fp,"strcpy:  %s  -> %s\n",last,variable);
             strcpy(variable,last);
          } else {
-//            printf("strcpy:  %s  -> %s\n",variable,last);
+//            fprintf(log_fp,"strcpy:  %s  -> %s\n",variable,last);
             strcpy(last,variable);
             k=-1;
          }
@@ -1282,12 +1291,12 @@ void ies_enkf_newE(matrix_type * newE){
             else if (strcmp(wellp,"OP_3") == 0) iwell=3;
             else if (strcmp(wellp,"OP_4") == 0) iwell=4;
             else if (strcmp(wellp,"OP_5") == 0) iwell=5;
-            else {printf("well not found %s\n",wellp); exit(-1); }
+            else {fprintf(log_fp,"well not found %s\n",wellp); exit(-1); }
 
             if (strcmp(ratep,"WOPR") == 0) irate=1;
             else if (strcmp(ratep,"WWPR") == 0) irate=2;
             else if (strcmp(ratep,"WGPR") == 0) irate=3;
-            else {printf("rate not found %s\n",ratep); exit(-1); }
+            else {fprintf(log_fp,"rate not found %s\n",ratep); exit(-1); }
 
             index=k +   (irate-1)*nx + (iwell-1)* nx * nrdata;
             for (int j=0; j< nrens; j++){
@@ -1296,19 +1305,35 @@ void ies_enkf_newE(matrix_type * newE){
             }
             float v1=matrix_iget_safe(Epert,index,0);
             float v2=matrix_iget_safe(newE,iobs,0);
-            printf("linenr=%d, obsnr=%d, iobs=%5d, index=%5d, k=%d, iwell=%d, irate=%d, well=%s, rate=%s, values=%f %f\n",linenr,obsnr,iobs,index,k,iwell,irate,wellp,ratep,v1,v2);
+            if (dbg) fprintf(log_fp,"linenr=%d, obsnr=%d, iobs=%5d, index=%5d, k=%d, iwell=%d, irate=%d, well=%s, rate=%s, values=%f %f\n",
+                   linenr,obsnr,iobs,index,k,iwell,irate,wellp,ratep,v1,v2);
          }
       }
    }
    fclose(fpu);
-   printf("Done reading =%s %d \n", updatelogfile, linenr);
+   if (dbg) fprintf(log_fp,"Done reading =%s %d \n", updatelogfile, linenr);
 
-// Check that all elements of newE are updated
-   for (int j=0; j< nens; j++){
-      for (int i=0; i< nobs; i++){
-         if (matrix_iget_safe( newE, i, j) == -999.9 ) 
-             printf("problem with element %d,%d=%f", i,j, matrix_iget_safe( newE, i, j)) ;
+// Check that all elements of newE are updated 
+   float std_dev;
+   float variance;
+   for (int i=0; i< nobs; i++){
+      variance=0.0;
+      for (int j=0; j< nens; j++){
+         float element=matrix_iget_safe( newE, i, j);
+         if (elment == -999.9 ) {fprintf(log_fp,"problem with element %d,%d=%f", i,j, element); exit(-1) ;}
+         variance=variance+element*element;
       }
+      variance=variance/(N-1);
+      std_dev=sqrt(variance);
+      matrix_scale_row(newE , i, 1.0/std_dev);
+
+      variance=0.0;
+      for (int j=0; j< nens; j++){
+         float element=matrix_iget_safe( newE, i, j);
+         variance=variance+element*element;
+      }
+      variance=variance/(N-1);
+      printf("scaled variance = %f',variance)
    }
    matrix_free(Epert);
 /********************************************************************************************************/   
