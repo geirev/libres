@@ -257,15 +257,16 @@ void ies_enkf_updateA( void * module_data,
 
 /***************************************************************************************************************/
 /* Replace ERT E with the one from file EPERT_0 */
-   int lepert=0;
+   int lepert=1;
    if (lepert == 1){
       fprintf(log_fp,"----ies_epert       = %d\n", lepert);
       matrix_type * newE   = matrix_alloc( nrobs    , ens_size );
       ies_enkf_newE(newE, log_fp, dbg);
       ies_enkf_data_store_initialE(data, newE);
       for (int i=0; i< nrobs ; i++){
-         fprintf(log_fp,"E check: %d %e\n",i,matrix_iget(newE,i,1));
+         fprintf(log_fp,"E check: %d %f\n",i,matrix_iget(newE,i,1));
       }
+
    } else {
      fprintf(log_fp,"----ies_E from ERT  = %d\n", lepert);
      ies_enkf_data_store_initialE(data, Ein);
@@ -1022,8 +1023,6 @@ void ies_enkf_updateE(const matrix_type * X,
    char *cnrdata = malloc(10 * sizeof(char));
    char *cnx = malloc(10 * sizeof(char));
 
-// matrix_pretty_fprint_submat(X,"X","%11.5f",stdout,0,7,0,7);
-// Alternative one
    if (dbg) fprintf(log_fp,"Reading =%s version A\n", Efile);
    FILE* fpe = fopen(Efile, "r");
    if (fpe == NULL) { printf("fopen failed to open the file %s\n", Efile); exit(-1); }
@@ -1077,7 +1076,7 @@ void ies_enkf_updateE(const matrix_type * X,
 
 
 
-   printf("Computing the update \n");
+   fprintf(log_fp,"Computing the update of the measurement perturbations.\n");
    matrix_matmul(Eout,Ein,X);
 
 
@@ -1156,10 +1155,12 @@ void ies_enkf_updateE(const matrix_type * X,
    matrix_free(Eout);
 }
 
-/*
+/***************************************************************************************************
 *  This routine reads the original measurement perturbations E from a file EPERT_0 and replaces the ERT
-*  genereated Ein  matrix used to perturb measuerements in the IES update.  Since we can now read perturbations
-*  with correlated errors, we now compute the analysis with a nondiagonal R=EE' matrix for the options
+*  genereated Ein  matrix used to perturb measuerements in the IES update. The perturbations are scaled
+*  to have variance=1.0, to be consistent with ERT inputs.
+*  Since we can now read perturbations  with correlated errors, we now compute the analysis with a
+*  nondiagonal R=EE' matrix for the options
 *     ies_inversion=IES_INVERSION_SUBSPACE_EE_R(2)    -> subspace inversion from with R=EE
 *     ies_inversion=IES_INVERSION_SUBSPACE_RE(3)      -> subspace inversion from with R represented by E
 *  Note that for the following inversion options a diagonal R=I is implicitly used, and only the 
@@ -1313,27 +1314,33 @@ void ies_enkf_newE(matrix_type * newE,
    fclose(fpu);
    if (dbg) fprintf(log_fp,"Done reading =%s %d \n", updatelogfile, linenr);
 
-// Check that all elements of newE are updated 
+// Check that all elements of newE are updated  and scale to variance equal one.
    float std_dev;
    float variance;
    for (int i=0; i< nobs; i++){
       variance=0.0;
       for (int j=0; j< nens; j++){
          float element=matrix_iget_safe( newE, i, j);
-         if (elment == -999.9 ) {fprintf(log_fp,"problem with element %d,%d=%f", i,j, element); exit(-1) ;}
+         if (element == -999.9 ) {fprintf(log_fp,"problem with element %d,%d=%f", i,j, element); exit(-1) ;}
          variance=variance+element*element;
       }
-      variance=variance/(N-1);
+      variance=variance/(nens-1);
       std_dev=sqrt(variance);
+      if (std_dev < 0.0000001){
+         fprintf(log_fp,"correcting small std_dev %d  %f",i,std_dev);
+         std_dev=0.0000001;
+      }
       matrix_scale_row(newE , i, 1.0/std_dev);
 
+/* checking variance = 1.0
       variance=0.0;
       for (int j=0; j< nens; j++){
          float element=matrix_iget_safe( newE, i, j);
          variance=variance+element*element;
       }
-      variance=variance/(N-1);
-      printf("scaled variance = %f',variance)
+      variance=variance/(nens-1);
+      fprintf(log_fp,"scaled variance = %f",variance);
+*/
    }
    matrix_free(Epert);
 /********************************************************************************************************/   
