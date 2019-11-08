@@ -110,7 +110,7 @@ void enkf_analysis_fprintf_obs_summary(const obs_data_type * obs_data , const me
   }
   fprintf(stream , "===============================================================================================================================\n");
   fprintf(stream , "\n\n\n");
-  fclose(stream);
+  fflush(stream);
 }
 
 
