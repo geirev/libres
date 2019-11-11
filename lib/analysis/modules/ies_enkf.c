@@ -257,7 +257,7 @@ void ies_enkf_updateA( void * module_data,
 
 /***************************************************************************************************************/
 /* Replace ERT E with the one from file EPERT_0 */
-   int lepert=0;
+   int lepert=1;
    if (lepert == 1){
       fprintf(log_fp,"----ies_epert       = %d\n", lepert);
       matrix_type * newE   = matrix_alloc( nrobs    , ens_size );
@@ -424,8 +424,8 @@ void ies_enkf_updateA( void * module_data,
 
 /***************************************************************************************************************
 *  UPDATE ENSEMBLE SOLUTION RATE ERRORS IN CURRENT ITERATION  EI=E0*X                              (Line 11)   */
-   int lupdate_rates=0;
-   if (lupdate_rates == 1){
+   int lpert_update_rates=1;
+   if (lpert_update_rates == 1){
       ies_enkf_updateE(X,iteration_nr,log_fp, dbg);
       fprintf(log_fp,"updateE completed\n");
    }
