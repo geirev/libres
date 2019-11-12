@@ -259,12 +259,14 @@ void ies_enkf_updateA( void * module_data,
 /* Replace ERT E with the one from file EPERT_0 */
    int lepert=1;
    if (lepert == 1){
-      fprintf(log_fp,"----ies_epert       = %d\n", lepert);
-      matrix_type * newE   = matrix_alloc( nrobs    , ens_size );
-      ies_enkf_newE(newE, log_fp, dbg);
-      ies_enkf_data_store_initialE(data, newE);
-      for (int i=0; i< nrobs ; i++){
-         fprintf(log_fp,"E check: %d %f\n",i,matrix_iget(newE,i,1));
+      if (iteration_nr == 1){
+         fprintf(log_fp,"----ies_epert       = %d\n", lepert);
+         matrix_type * newE   = matrix_alloc( nrobs    , ens_size );
+         ies_enkf_newE(newE, log_fp, dbg);
+         ies_enkf_data_store_initialE(data, newE);
+         for (int i=0; i< nrobs ; i++){
+            fprintf(log_fp,"E check: %d %f\n",i,matrix_iget(newE,i,1));
+         }
       }
 
    } else {
