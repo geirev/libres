@@ -1012,7 +1012,7 @@ void ies_enkf_updateE(const matrix_type * X,
 
    char* Efile="EPERT_0";
    char Efileout[20];
-   char Efilestat[20];
+//   char Efilestat[20];
 
    int iobs;
    int nens = matrix_get_rows( X );
@@ -1104,7 +1104,8 @@ void ies_enkf_updateE(const matrix_type * X,
    fclose(fpout);
    if (dbg) fprintf(log_fp,"Done writing =%s \n", Efileout);
 
-   // statistics
+/*
+// statistics
    sprintf(Efilestat, "Estat_%d.dat",iter);
    if (dbg) fprintf(log_fp,"Writing the output file=%s \n", Efilestat);
    FILE* fpstat = fopen(Efilestat, "w");
@@ -1126,7 +1127,9 @@ void ies_enkf_updateE(const matrix_type * X,
    }
    fclose(fpstat);
    if (dbg) fprintf(log_fp,"Done writing =%s \n", Efilestat);
+*/
 
+/*
    // statistics
    if (iter == 1){
       sprintf(Efilestat, "Estat_0.dat");
@@ -1151,6 +1154,7 @@ void ies_enkf_updateE(const matrix_type * X,
       fclose(fpstat);
       if (dbg) fprintf(log_fp,"Done writing =%s \n", Efilestat);
    }
+   */
 
 
    matrix_free(Ein);
