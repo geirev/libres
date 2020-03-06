@@ -261,10 +261,10 @@ void ies_enkf_updateA( void * module_data,
    if (lepert == 1){
       if (iteration_nr == 1){
          fprintf(log_fp,"----ies_epert       = %d\n", lepert);
-         matrix_type * newE   = matrix_alloc( nrobs    , ens_size );
+         matrix_type * newE   = matrix_alloc( nrobs_msk    , ens_size );   //GE
          ies_enkf_newE(newE, log_fp, dbg);
          ies_enkf_data_store_initialE(data, newE);
-         for (int i=0; i< nrobs ; i++){
+         for (int i=0; i< nrobs_msk ; i++){   //GE
             fprintf(log_fp,"E check: %d %f\n",i,matrix_iget(newE,i,1));
          }
       }
