@@ -230,6 +230,36 @@ void ies_enkf_data_augment_initialE(ies_enkf_data_type * data, const matrix_type
   }
 }
 
+/* We store the EPERT read observation perturbations in data->E */
+void ies_enkf_data_replace_initialE(ies_enkf_data_type * data, const matrix_type * E0) {
+  if (data->E){
+    matrix_free(data->E);
+    bool dbg = ies_enkf_config_get_ies_debug( data->config ) ;
+    int obs_size_msk = ies_enkf_data_get_obs_mask_size( data );
+    int ens_size_msk = ies_enkf_data_get_ens_mask_size( data );
+    fprintf(data->log_fp,"Allocating and replacing data->E with EPERT file (%d,%d) \n",obs_size_msk,ens_size_msk);
+    data->E = matrix_alloc(obs_size_msk,ens_size_msk);
+    matrix_set(data->E , -999.9) ;
+    int m=0;
+    for (int i = 0; i < obs_size_msk; i++) {
+      if ( bool_vector_iget(data->obs_mask0,i) ){
+        matrix_copy_row(data->E,E0,i,m);
+        m++;
+      }
+    }
+
+    if (dbg) {
+      int nrobs_inp=matrix_get_rows( E0 );
+      int m_nrobs=util_int_min(nrobs_inp-1, 50);
+      int m_ens_size=util_int_min(ens_size_msk-1, 16);
+      matrix_pretty_fprint_submat(E0,"E0","%11.5f",data->log_fp,0,m_nrobs,0,m_ens_size);
+      m_nrobs=util_int_min(obs_size_msk-1, 50);
+      matrix_pretty_fprint_submat(data->E,"data->E","%11.5f",data->log_fp,0,m_nrobs,0,m_ens_size);
+    }
+
+  }
+}
+
 void ies_enkf_data_store_initialA(ies_enkf_data_type * data, const matrix_type * A) {
   if (!data->A0){
     // We store the initial ensemble to use it in final update equation                     (Line 11)
